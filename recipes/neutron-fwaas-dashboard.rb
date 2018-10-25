@@ -20,34 +20,55 @@ include_recipe 'openstack-dashboard::horizon'
 django_path = node['openstack']['dashboard']['django_path']
 policy_file_path = node['openstack']['dashboard']['policy_files_path']
 
-python_package 'neutron-fwaas-dashboard'
+pyenv_dir = '/usr/local/pyenv/neutron-fwaas-dashboard'
+python_virtualenv pyenv_dir do
+  pip_version '18.0'
+  options :system
+end
 
-%w(
-  _7010_project_firewalls_common.py
-  _7011_project_firewalls_panel.py
-  _7012_project_firewalls_v2_panel.py
-).each do |file|
-  remote_file "#{django_path}/openstack_dashboard/local/enabled/#{file}" do
-    source "https://raw.githubusercontent.com/openstack/neutron-fwaas-dashboard/stable/queens/neutron_fwaas_dashboard/enabled/#{file}"
-    owner 'root'
-    mode 0o0644
-    notifies :run, 'execute[neutron-fwaas-dashboard compilemessages]'
-    notifies :run, 'execute[openstack-dashboard collectstatic]'
+# Queens version is 1.3.0 (https://releases.openstack.org/queens/index.html)
+neutron_fwaas_dashboard_version = '1.3.0'
+
+python_package 'neutron-fwaas-dashboard' do
+  version neutron_fwaas_dashboard_version
+  notifies :run, 'execute[openstack-dashboard collectstatic]'
+end
+
+link '/usr/local/lib/python2.7/dist-packages/neutron_fwaas_dashboard' do
+  to "#{pyenv_dir}/lib/python2.7/site-packages/neutron_fwaas_dashboard"
+end
+
+distinfo_dir = "neutron_fwaas_dashboard-#{neutron_fwaas_dashboard_version}.dist-info"
+
+link "/usr/local/lib/python2.7/dist-packages/#{distinfo_dir}" do
+  to "#{pyenv_dir}/lib/python2.7/site-packages/#{distinfo_dir}"
+end
+
+%w(_7010_project_firewalls_common _7011_project_firewalls_panel _7012_project_firewalls_v2_panel).each do |name|
+  link "/usr/share/openstack-dashboard/openstack_dashboard/local/enabled/#{name}.py" do
+    to "#{pyenv_dir}/lib/python2.7/site-packages/neutron_fwaas_dashboard/enabled/#{name}.py"
   end
+end
+
+file '/usr/local/lib/python2.7/dist-packages/neutron_fwaas_dashboard/__init__.py' do
+  owner 'root'
+  group 'root'
+  mode '0644'
+  content ''
 end
 
 remote_file "#{policy_file_path}/neutron-fwaas-policy.json" do
   source 'https://raw.githubusercontent.com/openstack/neutron-fwaas-dashboard/stable/queens/etc/neutron-fwaas-policy.json'
   owner 'root'
   mode 0o0644
-  notifies :run, 'execute[neutron-fwaas-dashboard compilemessages]'
-  notifies :run, 'execute[openstack-dashboard collectstatic]'
+#  notifies :run, 'execute[neutron-fwaas-dashboard compilemessages]'
+#  notifies :run, 'execute[openstack-dashboard collectstatic]'
   notifies :restart, 'service[apache2]', :delayed
 end
 
-execute 'neutron-fwaas-dashboard compilemessages' do
-  cwd django_path
-  environment 'PYTHONPATH' => "/etc/openstack-dashboard:#{django_path}:$PYTHONPATH"
-  command 'python manage.py compilemessages'
-  action :nothing
-end
+#execute 'neutron-fwaas-dashboard compilemessages' do
+#  cwd django_path
+#  environment 'PYTHONPATH' => "/etc/openstack-dashboard:#{django_path}:$PYTHONPATH"
+#  command 'python manage.py compilemessages'
+#  action :nothing
+#end
